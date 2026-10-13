@@ -9,7 +9,7 @@ module.exports=function activate(api){
   const http=require(path.join(base,'dist/src/services/auth/httpClient.js')).default();
   const {buildAndroidComm}=require(path.join(base,'dist/src/services/auth/androidDevice.js'));
   const backend=createBackend({service,http,buildComm:buildAndroidComm});
-  api.rpc.handle('recommend',(kind,owner)=>backend.request(kind,owner));
+  api.rpc.handle('recommend',(kind,owner,payload)=>backend.request(kind,owner,payload));
   api.log.info('QQ personal collections ready');
   return ()=>backend.dispose();
 };

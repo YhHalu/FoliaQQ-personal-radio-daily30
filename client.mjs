@@ -8,7 +8,8 @@ export default async function activate(folium){
   const provider=registry.t('qq');
   if(!provider?.normalizeSong||typeof registry.o!=='function')throw new Error('QQ provider compatibility check failed');
   let lastError=0;
-  const bridge=createBridge({omni,provider,register:p=>registry.o(p),storage:localStorage,rpc:(kind,owner)=>folium.rpc.call('recommend',kind,owner),onError:code=>{
+  Object.assign(messages,{INVALID_SONG:'无法确认 QQ 歌曲信息，暂不能修改喜欢',WRITE_NOT_CONFIRMED:'未能确认喜欢状态，请刷新后重试',UPSTREAM_REJECTED:'QQ 音乐拒绝了请求，请检查登录状态'});
+  const bridge=createBridge({omni,provider,register:p=>registry.o(p),storage:localStorage,rpc:(kind,owner,payload)=>folium.rpc.call('recommend',kind,owner,payload),onError:code=>{
     if(Date.now()-lastError<4000)return;lastError=Date.now();
     folium.log.warn(messages[code]||'QQ 音乐推荐暂时不可用');
   }});

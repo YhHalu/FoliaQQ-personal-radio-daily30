@@ -1,12 +1,14 @@
 {
   "id": "qq-personal",
   "name": "QQ 每日30首与个性电台",
-  "version": "1.0.0",
-  "description": "在 QQ 音乐歌单列表追加独立的每日30首与个性电台入口，跟随当前登录账号。",
+  "version": "1.1.0",
+  "description": "追加每日30首与个性电台独立入口，支持当前 QQ 账号添加和取消喜欢。",
   "author": "Local",
   "folium": 1,
   "folia": "0.7.16",
   "main": "main.cjs",
   "client": "client.mjs",
-  "permissions": ["net.fetch"]
+  "permissions": [
+    "net.fetch"
+  ]
 }

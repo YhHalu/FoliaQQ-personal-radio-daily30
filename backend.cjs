@@ -17,6 +17,7 @@ function publicSong(raw) {
 }
 function createBackend({service,http,buildComm,now=Date.now}) {
   let disposed=false,pending=0;
+  const writing=new Set();
   async function resolve(owner) {
     if(disposed) throw error('MOD_DISABLED');
     if(!owner || typeof owner.token!=='string' || !owner.token || owner.token.length>1024 || typeof owner.accountId!=='string' || !owner.accountId) throw error('LOGIN_REQUIRED');
@@ -66,12 +67,55 @@ function createBackend({service,http,buildComm,now=Date.now}) {
     if(!Array.isArray(data.tracks)) throw error('INVALID_RESPONSE');
     return {accountId:owner.accountId,kind:'radio',songs:data.tracks.map(publicSong),fetchedAt:now()};
   }
+  async function liked(owner) {
+    const songs=[],pages=new Set();
+    for(let page=0;page<100;page++) {
+      await resolve(owner);
+      const data=checked(await service.getOwnedPlaylistSongs(owner.token,{disstid:0,dirid:201,offset:songs.length,limit:100}));
+      await resolve(owner);
+      if(!Array.isArray(data.songlist))throw error('INVALID_RESPONSE');
+      const batch=data.songlist.map(publicSong),key=batch.map(s=>s.mid).join(',');
+      if(batch.length&&pages.has(key))throw error('PAGINATION_REPEATED');
+      pages.add(key);songs.push(...batch);
+      if(!(data.hasmore===true||Number(data.hasmore)===1)) {
+        if(songs.length<Number(data.total_song_num||0))throw error('INCOMPLETE_PLAYLIST');
+        return songs;
+      }
+      if(!batch.length)throw error('PAGINATION_EMPTY');
+    }
+    throw error('PAGINATION_LIMIT');
+  }
+  async function like(owner,payload) {
+    if(!payload||typeof payload.liked!=='boolean'||!Number.isSafeInteger(payload.songId)||payload.songId<=0||typeof payload.mid!=='string'||!/^[a-zA-Z0-9]{1,64}$/.test(payload.mid))throw error('INVALID_SONG');
+    await resolve(owner);
+    const key=owner.accountId+':'+payload.mid;
+    if(writing.has(key))throw error('BUSY');
+    writing.add(key);
+    try {
+      const before=await liked(owner),present=before.some(s=>s.mid===payload.mid);
+      if(before.some(s=>s.mid===payload.mid&&Number(s.id)!==payload.songId))throw error('INVALID_SONG');
+      if(present!==payload.liked) {
+        await call(owner,'music.musicasset.PlaylistDetailWrite',payload.liked?'AddSonglist':'DelSonglist',{
+          dirId:201,tid:0,bFmtUtf8:true,v_songInfo:[{songId:payload.songId,songType:0}],
+        });
+        let verified=false;
+        for(let attempt=0;attempt<3;attempt++) {
+          const actual=(await liked(owner)).some(s=>s.mid===payload.mid);
+          if(actual===payload.liked){verified=true;break;}
+          if(attempt<2)await new Promise(r=>setTimeout(r,500));
+        }
+        if(!verified)throw error('WRITE_NOT_CONFIRMED');
+      }
+      await resolve(owner);
+      return {accountId:owner.accountId,mid:payload.mid,liked:payload.liked};
+    } finally {writing.delete(key);}
+  }
   return {
-    async request(kind,owner){
-      if(!['daily','radio'].includes(kind))return {ok:false,error:'UNSUPPORTED_OPERATION'};
+    async request(kind,owner,payload){
+      if(!['daily','radio','like'].includes(kind))return {ok:false,error:'UNSUPPORTED_OPERATION'};
       if(pending>=4)return {ok:false,error:'BUSY'};
       pending++;
-      try{return {ok:true,data:await(kind==='daily'?daily(owner):radio(owner))};}
+      try{return {ok:true,data:await(kind==='daily'?daily(owner):kind==='radio'?radio(owner):like(owner,payload))};}
       catch(e){return {ok:false,error: typeof e.code==='string'&&/^[A-Z_]+$/.test(e.code)?e.code:'REQUEST_FAILED'};}
       finally{pending--;}
     },

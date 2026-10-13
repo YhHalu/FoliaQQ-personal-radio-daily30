@@ -55,7 +55,31 @@ export function createBridge({omni,provider,register,rpc,storage,now=Date.now,on
     });
     radioTail=work;return work;
   }
-  const replacement={...provider,recommendations:{...provider.recommendations,getDailySongs,getPersonalFm}};
+  const likePending=new Set();
+  async function likeSong(song,desired) {
+    const o=sync(),generation=epoch,ref=song?.sourceRef;
+    if(!o)throw new Error('LOGIN_REQUIRED');
+    if(ref?.kind!=='online'||ref.providerId!=='qq'||typeof desired!=='boolean')throw new Error('INVALID_SONG');
+    let details=song;
+    const key=o.accountId+':'+ref.mediaId;
+    if(likePending.has(key))throw new Error('BUSY');
+    likePending.add(key);
+    try {
+      if(!Number.isSafeInteger(Number(ref.providerData?.songId))||Number(ref.providerData?.songId)<=0) {
+        details=await provider.playback.getSongDetail(ref.mediaId);
+        assertCurrent(o,generation);
+      }
+      const songId=Number(details?.sourceRef?.providerData?.songId);
+      if(!Number.isSafeInteger(songId)||songId<=0||String(details?.sourceRef?.mediaId)!==String(ref.mediaId))throw new Error('INVALID_SONG');
+      assertCurrent(o,generation);
+      const response=await rpc('like',o,{songId,mid:String(ref.mediaId),liked:desired});
+      assertCurrent(o,generation);
+      if(!response?.ok)throw new Error(response?.error||'REQUEST_FAILED');
+      if(response.data?.accountId!==o.accountId||response.data.mid!==String(ref.mediaId)||response.data.liked!==desired)throw new Error('INVALID_RESPONSE');
+    } catch(e){if(e.name!=='AbortError')onError(e.message);throw e;}
+    finally {likePending.delete(key);}
+  }
+  const replacement={...provider,capabilities:{...provider.capabilities,likes:true,mutations:true},mutations:{...provider.mutations,likeSong},recommendations:{...provider.recommendations,getDailySongs,getPersonalFm}};
   // Keep the stock radio tab unchanged: our account/date-scoped daily card avoids
   // the host's shared native daily resource key and sits beside imported playlists.
   function summaries(){
